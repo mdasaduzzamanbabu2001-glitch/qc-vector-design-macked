@@ -18,59 +18,82 @@ jobs:
         with:
           node-version: 22
 
-      - name: Prepare Clean package.json & Icon
+      - name: Prepare Files & Mac Icon
         run: |
-          rm -f package-lock.json
-          cat << 'EOF' > package.json
-          {
-            "name": "mydesigns-pro",
-            "version": "1.0.0",
-            "description": "MyDesigns Pro Tool — Standalone POD Suite",
-            "author": "Md Asaduzzaman Babu",
-            "main": "main.js",
-            "build": {
-              "appId": "com.mydesigns.pro",
-              "productName": "MyDesigns Pro Tool",
-              "mac": {
-                "category": "public.app-category.graphics-design",
-                "identity": null,
-                "target": ["dir", "zip"]
-              }
-            },
-            "devDependencies": {
-              "electron": "^30.5.1",
-              "electron-builder": "^25.1.8"
-            }
-          }
-          EOF
-          if [ -f icon.png ]; then
-            sips -s format png -z 512 512 icon.png --out icon_fixed.png && mv icon_fixed.png icon.png || true
-            npm pkg set build.mac.icon="icon.png"
+          MAIN_FILE=$(find . -maxdepth 3 -name "main.js" | head -n 1)
+          if [ -n "$MAIN_FILE" ]; then
+            MAIN_DIR=$(dirname "$MAIN_FILE")
+            if [ "$MAIN_DIR" != "." ]; then
+              cp -R "$MAIN_DIR"/* . || true
+            fi
           fi
 
-      - name: Install Dependencies
+          rm -f package-lock.json
+          node -e '
+            const fs = require("fs");
+            const pkg = {
+              name: "mydesigns-pro",
+              version: "1.0.0",
+              description: "MyDesigns Pro Tool",
+              author: "Md Asaduzzaman Babu",
+              main: "main.js",
+              devDependencies: {
+                "electron": "30.5.1",
+                "@electron/packager": "^18.3.6"
+              }
+            };
+            fs.writeFileSync("package.json", JSON.stringify(pkg, null, 2));
+          '
+
+          if [ -f icon.png ]; then
+            mkdir -p MyIcon.iconset
+            sips -s format png -z 16 16     icon.png --out MyIcon.iconset/icon_16x16.png || true
+            sips -s format png -z 32 32     icon.png --out MyIcon.iconset/icon_16x16@2x.png || true
+            sips -s format png -z 32 32     icon.png --out MyIcon.iconset/icon_32x32.png || true
+            sips -s format png -z 64 64     icon.png --out MyIcon.iconset/icon_32x32@2x.png || true
+            sips -s format png -z 128 128   icon.png --out MyIcon.iconset/icon_128x128.png || true
+            sips -s format png -z 256 256   icon.png --out MyIcon.iconset/icon_128x128@2x.png || true
+            sips -s format png -z 256 256   icon.png --out MyIcon.iconset/icon_256x256.png || true
+            sips -s format png -z 512 512   icon.png --out MyIcon.iconset/icon_256x256@2x.png || true
+            sips -s format png -z 512 512   icon.png --out MyIcon.iconset/icon_512x512.png || true
+            sips -s format png -z 1024 1024 icon.png --out MyIcon.iconset/icon_512x512@2x.png || true
+            iconutil -c icns MyIcon.iconset -o app.icns || true
+            rm -rf MyIcon.iconset
+          fi
+
+      - name: Install Official Electron Packager
         run: npm install
 
-      - name: Build macOS App Bundles
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: false
-        run: npx electron-builder --mac --x64 --arm64
-
-      - name: Create Mac DMG Installers
+      - name: Package Mac Apps & Create DMG
         run: |
-          mkdir -p dmg-arm64 dmg-intel
-          cp -R "dist/mac-arm64/MyDesigns Pro Tool.app" dmg-arm64/
+          ICON_FLAG=""
+          if [ -f app.icns ]; then
+            ICON_FLAG="--icon=app.icns"
+          fi
+
+          npx @electron/packager . "MyDesigns Pro Tool" --platform=darwin --arch=arm64 --out=dist --overwrite --ignore="^/(dist|out|dmg-)" $ICON_FLAG
+          npx @electron/packager . "MyDesigns Pro Tool" --platform=darwin --arch=x64 --out=dist --overwrite --ignore="^/(dist|out|dmg-)" $ICON_FLAG
+
+          codesign --force --deep --sign - "dist/MyDesigns Pro Tool-darwin-arm64/MyDesigns Pro Tool.app" || true
+          codesign --force --deep --sign - "dist/MyDesigns Pro Tool-darwin-x64/MyDesigns Pro Tool.app" || true
+
+          mkdir -p out dmg-arm64 dmg-intel
+
+          ditto -c -k --sequesterRsrc --keepParent "dist/MyDesigns Pro Tool-darwin-arm64/MyDesigns Pro Tool.app" "out/MyDesigns-Pro-Tool-Mac-AppleSilicon.zip"
+          ditto -c -k --sequesterRsrc --keepParent "dist/MyDesigns Pro Tool-darwin-x64/MyDesigns Pro Tool.app" "out/MyDesigns-Pro-Tool-Mac-Intel.zip"
+
+          cp -R "dist/MyDesigns Pro Tool-darwin-arm64/MyDesigns Pro Tool.app" dmg-arm64/
           ln -s /Applications dmg-arm64/Applications
-          hdiutil create -volname "MyDesigns Pro Tool" -srcfolder dmg-arm64 -ov -format UDZO "dist/MyDesigns-Pro-Tool-Mac-AppleSilicon.dmg"
+          hdiutil create -volname "MyDesigns Pro Tool" -srcfolder dmg-arm64 -ov -format UDZO "out/MyDesigns-Pro-Tool-Mac-AppleSilicon.dmg" || true
 
-          cp -R "dist/mac/MyDesigns Pro Tool.app" dmg-intel/
+          cp -R "dist/MyDesigns Pro Tool-darwin-x64/MyDesigns Pro Tool.app" dmg-intel/
           ln -s /Applications dmg-intel/Applications
-          hdiutil create -volname "MyDesigns Pro Tool" -srcfolder dmg-intel -ov -format UDZO "dist/MyDesigns-Pro-Tool-Mac-Intel.dmg"
+          hdiutil create -volname "MyDesigns Pro Tool" -srcfolder dmg-intel -ov -format UDZO "out/MyDesigns-Pro-Tool-Mac-Intel.dmg" || true
 
-      - name: Upload Mac Installers (.dmg & .zip)
+          ls -lh out/
+
+      - name: Upload Mac Installers
         uses: actions/upload-artifact@v4
         with:
           name: Mac-Installers
-          path: |
-            dist/*.dmg
-            dist/*.zip
+          path: out/*
