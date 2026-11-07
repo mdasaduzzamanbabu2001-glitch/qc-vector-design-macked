@@ -7,7 +7,7 @@ on:
 
 jobs:
   build_mac:
-    runs-on: macos-14
+    runs-on: macos-15
 
     steps:
       - name: Checkout Code
@@ -18,25 +18,56 @@ jobs:
         with:
           node-version: 22
 
-      - name: Auto-Fix package.json & Icon for macOS
+      - name: Prepare Clean package.json & Icon
         run: |
           rm -f package-lock.json
-          npm pkg delete dependencies.puppeteer || true
-          npm pkg set author="Md Asaduzzaman Babu"
-          npm pkg set description="MyDesigns Pro Tool"
+          cat << 'EOF' > package.json
+          {
+            "name": "mydesigns-pro",
+            "version": "1.0.0",
+            "description": "MyDesigns Pro Tool — Standalone POD Suite",
+            "author": "Md Asaduzzaman Babu",
+            "main": "main.js",
+            "build": {
+              "appId": "com.mydesigns.pro",
+              "productName": "MyDesigns Pro Tool",
+              "mac": {
+                "category": "public.app-category.graphics-design",
+                "identity": null,
+                "target": ["dir", "zip"]
+              }
+            },
+            "devDependencies": {
+              "electron": "^30.5.1",
+              "electron-builder": "^25.1.8"
+            }
+          }
+          EOF
           if [ -f icon.png ]; then
-            sips -s format png -z 512 512 icon.png --out icon.png || true
+            sips -s format png -z 512 512 icon.png --out icon_fixed.png && mv icon_fixed.png icon.png || true
+            npm pkg set build.mac.icon="icon.png"
           fi
 
       - name: Install Dependencies
         run: npm install
 
-      - name: Build Mac DMG & ZIP
+      - name: Build macOS App Bundles
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
-        run: npx electron-builder --mac dmg zip --x64 --arm64 --config.mac.identity=null
+        run: npx electron-builder --mac --x64 --arm64
 
-      - name: Upload Mac Installers
+      - name: Create Mac DMG Installers
+        run: |
+          mkdir -p dmg-arm64 dmg-intel
+          cp -R "dist/mac-arm64/MyDesigns Pro Tool.app" dmg-arm64/
+          ln -s /Applications dmg-arm64/Applications
+          hdiutil create -volname "MyDesigns Pro Tool" -srcfolder dmg-arm64 -ov -format UDZO "dist/MyDesigns-Pro-Tool-Mac-AppleSilicon.dmg"
+
+          cp -R "dist/mac/MyDesigns Pro Tool.app" dmg-intel/
+          ln -s /Applications dmg-intel/Applications
+          hdiutil create -volname "MyDesigns Pro Tool" -srcfolder dmg-intel -ov -format UDZO "dist/MyDesigns-Pro-Tool-Mac-Intel.dmg"
+
+      - name: Upload Mac Installers (.dmg & .zip)
         uses: actions/upload-artifact@v4
         with:
           name: Mac-Installers
