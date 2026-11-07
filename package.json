@@ -1,0 +1,38 @@
+{
+  "name": "mydesigns-pro",
+  "version": "1.0.0",
+  "description": "MyDesigns Pro Tool — Standalone POD Suite",
+  "author": "Md Asaduzzaman Babu",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac"
+  },
+  "build": {
+    "appId": "com.mydesigns.pro",
+    "productName": "MyDesigns Pro Tool",
+    "win": {
+      "target": "nsis",
+      "icon": "icon.png"
+    },
+    "mac": {
+      "icon": "icon.png",
+      "category": "public.app-category.graphics-design",
+      "identity": null,
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ]
+    }
+  },
+  "devDependencies": {
+    "electron": "^30.0.0",
+    "electron-builder": "^26.18.0"
+  }
+}
